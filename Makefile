@@ -1,8 +1,6 @@
 TARGET = flipfetch
-
 CC = gcc
 CFLAGS = -Wall -O2 -std=c99
-
 PREFIX = /usr/local
 
 .PHONY: all clean install uninstall
@@ -15,12 +13,14 @@ $(TARGET): flipfetch.c
 install: $(TARGET)
 	mkdir -p $(PREFIX)/bin
 	cp $(TARGET) $(PREFIX)/bin/$(TARGET)
+	cp flogo.txt $(PREFIX)/bin/flogo.txt
 	chmod 755 $(PREFIX)/bin/$(TARGET)
-	@echo "installed in $(PREFIX)/bin/$(TARGET)"
+	@echo "installed to $(PREFIX)/bin/"
 
 uninstall:
 	rm -f $(PREFIX)/bin/$(TARGET)
-	@echo "deleted from $(PREFIX)/bin/$(TARGET)"
+	rm -f $(PREFIX)/bin/flogo.txt
+	@echo "removed"
 
 clean:
 	rm -f $(TARGET)

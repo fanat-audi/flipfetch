@@ -152,9 +152,6 @@ void parse_info(const char *response, FlipperInfo *info) {
     strcpy(info->sd_card, "N/A");
     strcpy(info->serial, "N/A");
     strcpy(info->status, "N/A");
-    
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
     strcpy(info->build_date, "N/A");
     
     char response_copy[MAX_BUFFER];
