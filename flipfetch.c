@@ -41,15 +41,12 @@ char** read_logo(const char* filename, int* line_count) {
         fprintf(stderr, "%s❌ Error: File '%s' not found.%s\n", COLOR_LABEL, filename, COLOR_RESET);
         exit(1);
     }
-    
     char** logo = malloc(MAX_LINES * sizeof(char*));
     char line[MAX_LINE_LEN];
     *line_count = 0;
-    
     while (fgets(line, sizeof(line), file) && *line_count < MAX_LINES) {
         size_t len = strlen(line);
         if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-        
         logo[*line_count] = malloc(MAX_LINE_LEN);
         strncpy(logo[*line_count], line, MAX_LINE_LEN - 1);
         logo[*line_count][MAX_LINE_LEN - 1] = '\0';
@@ -68,7 +65,6 @@ int find_flipper_port(char *port, size_t port_size) {
     DIR *dir;
     struct dirent *entry;
     const char *paths[] = {"/dev", "/var/run", NULL};
-    
     for (int i = 0; paths[i] != NULL; i++) {
         dir = opendir(paths[i]);
         if (!dir) continue;
@@ -88,9 +84,8 @@ int find_flipper_port(char *port, size_t port_size) {
 }
 
 int serial_open(const char *port) {
-    int fd = open(port, O_RDWR | O_NOCTTY | O_NDELAY);
+    int fd = open(port, O_RDWR | O_NOCTTY);
     if (fd < 0) return -1;
-    
     struct termios options;
     tcgetattr(fd, &options);
     cfsetispeed(&options, B115200);
@@ -104,14 +99,16 @@ int serial_open(const char *port) {
     options.c_iflag &= ~(IXON | IXOFF | IXANY);
     options.c_oflag &= ~OPOST;
     options.c_cc[VMIN] = 0;
-    options.c_cc[VTIME] = 10;
+    options.c_cc[VTIME] = 5;
     tcsetattr(fd, TCSANOW, &options);
+    usleep(500000);
+    tcflush(fd, TCIOFLUSH);
     return fd;
 }
 
 void send_command(int fd, const char *cmd) {
     write(fd, cmd, strlen(cmd));
-    write(fd, "\r", 1);
+    write(fd, "\r\n", 2);
     usleep(300000);
 }
 
@@ -119,7 +116,7 @@ char* read_response(int fd) {
     static char buffer[MAX_BUFFER];
     memset(buffer, 0, MAX_BUFFER);
     fd_set set;
-    struct timeval timeout = {1, 0};
+    struct timeval timeout = {1, 500000};
     FD_ZERO(&set);
     FD_SET(fd, &set);
     if (select(fd + 1, &set, NULL, NULL, &timeout) > 0) {
@@ -136,59 +133,48 @@ void trim_whitespace(char *str) {
     char *end = start + strlen(start) - 1;
     while (end > start && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) end--;
     *(end + 1) = '\0';
-    if (start != str) {
-        memmove(str, start, strlen(start) + 1);
-    }
+    if (start != str) memmove(str, start, strlen(start) + 1);
 }
 
 void parse_info(const char *response, FlipperInfo *info) {
-    strcpy(info->dolphin, "N/A");
-    strcpy(info->device, "N/A");
+    strcpy(info->device, "Flipper Zero");
     strcpy(info->manufacturer, "Flipper Devices Ltd.");
-    strcpy(info->cpu, "N/A");
+    strcpy(info->cpu, "STM32WB55");
+    strcpy(info->flash, "1 MB");
+    strcpy(info->sram, "256 KB");
+    strcpy(info->status, "Connected");
+    
+    strcpy(info->dolphin, "N/A");
     strcpy(info->firmware, "N/A");
-    strcpy(info->flash, "N/A");
-    strcpy(info->sram, "N/A");
+    strcpy(info->build_date, "N/A");
     strcpy(info->sd_card, "N/A");
     strcpy(info->serial, "N/A");
-    strcpy(info->status, "N/A");
-    strcpy(info->build_date, "N/A");
-    
+
     char response_copy[MAX_BUFFER];
     strncpy(response_copy, response, MAX_BUFFER - 1);
-    char *lines[50];
-    int line_count = 0;
-    char *token = strtok(response_copy, "\n");
-    while (token && line_count < 50) {
-        lines[line_count++] = token;
-        token = strtok(NULL, "\n");
-    }
     
-    for (int i = 0; i < line_count; i++) {
-        char *line = lines[i];
+    char *saveptr;
+    char *line = strtok_r(response_copy, "\n", &saveptr);
+    while (line != NULL) {
         char *colon = strchr(line, ':');
-        if (!colon) continue;
-        *colon = '\0';
-        char *key = line;
-        char *value = colon + 1;
-        trim_whitespace(key);
-        trim_whitespace(value);
-        
-        if (strstr(key, "Name") || strstr(key, "Dolphin")) {
-            strncpy(info->dolphin, value, sizeof(info->dolphin) - 1);
-        } else if (strstr(key, "Firmware") || strstr(key, "Version")) {
-            strncpy(info->firmware, value, sizeof(info->firmware) - 1);
-        } else if (strstr(key, "Build") || strstr(key, "Date")) {
-            strncpy(info->build_date, value, sizeof(info->build_date) - 1);
-        } else if (strstr(key, "Serial") || strstr(key, "Address")) {
-            strncpy(info->serial, value, sizeof(info->serial) - 1);
-        } else if (strstr(key, "CPU") || strstr(key, "Processor")) {
-            strncpy(info->cpu, value, sizeof(info->cpu) - 1);
-        } else if (strstr(key, "Flash")) {
-            strncpy(info->flash, value, sizeof(info->flash) - 1);
-        } else if (strstr(key, "SRAM") || strstr(key, "RAM")) {
-            strncpy(info->sram, value, sizeof(info->sram) - 1);
+        if (colon) {
+            *colon = '\0';
+            char *key = line;
+            char *value = colon + 1;
+            trim_whitespace(key);
+            trim_whitespace(value);
+
+            if (strcmp(key, "hardware_name") == 0) {
+                strncpy(info->dolphin, value, sizeof(info->dolphin) - 1);
+            } else if (strcmp(key, "hardware_uid") == 0) {
+                strncpy(info->serial, value, sizeof(info->serial) - 1);
+            } else if (strcmp(key, "firmware_version") == 0) {
+                strncpy(info->firmware, value, sizeof(info->firmware) - 1);
+            } else if (strcmp(key, "firmware_build_date") == 0) {
+                strncpy(info->build_date, value, sizeof(info->build_date) - 1);
+            }
         }
+        line = strtok_r(NULL, "\n", &saveptr);
     }
 }
 
@@ -197,31 +183,45 @@ void fetch_info(int fd, FlipperInfo *info) {
     char *response = read_response(fd);
     parse_info(response, info);
     
-    send_command(fd, "cpu_info");
+    send_command(fd, "");
+    read_response(fd);
+    tcflush(fd, TCIOFLUSH);
+
+    send_command(fd, "storage info /ext");
     response = read_response(fd);
-    if (strstr(response, "STM32")) {
-        char *cpu = strstr(response, "STM32");
-        char *end = strchr(cpu, '\n');
-        if (end) *end = '\0';
-        strncpy(info->cpu, cpu, sizeof(info->cpu) - 1);
-    }
-    
-    send_command(fd, "sd_info");
-    response = read_response(fd);
-    char *size = strstr(response, "MB");
-    if (size) {
-        char *start = size;
+
+    char *total_kb_ptr = strstr(response, "KiB total");
+    char *free_kb_ptr = strstr(response, "KiB free");
+    long long total_kb = 0;
+    long long free_kb = 0;
+
+    // Парсим общее место
+    if (total_kb_ptr) {
+        char *start = total_kb_ptr;
         while (start > response && *(start-1) != ' ' && *(start-1) != '\n') start--;
         if (start > response) {
-            char sd_str[32];
-            int len = 0;
-            while (start < size + 2 && len < 31) {
-                sd_str[len++] = *start++;
-            }
-            sd_str[len] = '\0';
-            trim_whitespace(sd_str);
-            strncpy(info->sd_card, sd_str, sizeof(info->sd_card) - 1);
+            total_kb = atoll(start);
         }
+    }
+
+    // Парсим свободное место
+    if (free_kb_ptr) {
+        char *start = free_kb_ptr;
+        while (start > response && *(start-1) != ' ' && *(start-1) != '\n') start--;
+        if (start > response) {
+            free_kb = atoll(start);
+        }
+    }
+
+    // Формируем строку: Занято / Всего
+    if (total_kb > 0 && free_kb > 0) {
+        long long used_kb = total_kb - free_kb;
+        double used_gb = (double)used_kb / 1048576.0;
+        double total_gb = (double)total_kb / 1048576.0;
+        snprintf(info->sd_card, sizeof(info->sd_card), "%.1f GB / %.1f GB", used_gb, total_gb);
+    } else if (total_kb > 0) {
+        long long total_gb = total_kb / 1048576;
+        snprintf(info->sd_card, sizeof(info->sd_card), "%lld GB", total_gb);
     }
 }
 
@@ -267,11 +267,8 @@ void display_info(FlipperInfo *info, char** logo, int logo_lines) {
     int total_lines = (logo_lines > 11) ? logo_lines : 11;
 
     for (int i = 0; i < total_lines; i++) {
-        if (i < logo_lines) {
-            printf("  %s%s", COLOR_LABEL, logo[i]);
-        } else {
-            printf("  ");
-        }
+        if (i < logo_lines) printf("  %s%s", COLOR_LABEL, logo[i]);
+        else printf("  ");
 
         if (i == offset) {
             printf("\033[%dG%s%s@%s%s", column_offset, COLOR_WHITE, user, hostname, COLOR_RESET);
