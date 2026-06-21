@@ -10,6 +10,11 @@
 #include <time.h>
 #include <sys/select.h>
 #include <libgen.h>
+#include <sys/sysctl.h>
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_WHITE   "\033[37m"
@@ -195,7 +200,6 @@ void fetch_info(int fd, FlipperInfo *info) {
     long long total_kb = 0;
     long long free_kb = 0;
 
-    // Парсим общее место
     if (total_kb_ptr) {
         char *start = total_kb_ptr;
         while (start > response && *(start-1) != ' ' && *(start-1) != '\n') start--;
@@ -204,7 +208,6 @@ void fetch_info(int fd, FlipperInfo *info) {
         }
     }
 
-    // Парсим свободное место
     if (free_kb_ptr) {
         char *start = free_kb_ptr;
         while (start > response && *(start-1) != ' ' && *(start-1) != '\n') start--;
@@ -213,7 +216,6 @@ void fetch_info(int fd, FlipperInfo *info) {
         }
     }
 
-    // Формируем строку: Занято / Всего
     if (total_kb > 0 && free_kb > 0) {
         long long used_kb = total_kb - free_kb;
         double used_gb = (double)used_kb / 1048576.0;
@@ -288,7 +290,42 @@ int main(int argc, char *argv[]) {
     FlipperInfo info = {0};
     
     char path[512];
-    char *dir = dirname(strdup(argv[0]));
+    char exe_path[512] = {0};
+
+    #ifdef __APPLE__
+        uint32_t size = sizeof(exe_path);
+        if (_NSGetExecutablePath(exe_path, &size) != 0) {
+            fprintf(stderr, "%s❌ Error: _NSGetExecutablePath failed.\n", COLOR_LABEL);
+            return 1;
+        }
+        char *real_path = realpath(exe_path, NULL);
+        if (!real_path) {
+            fprintf(stderr, "%s❌ Error: realpath failed.\n", COLOR_LABEL);
+            return 1;
+        }
+        strncpy(exe_path, real_path, sizeof(exe_path) - 1);
+        free(real_path);
+    #elif defined(__linux__)
+        ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (len == -1) {
+            perror("readlink");
+            return 1;
+        }
+        exe_path[len] = '\0';
+    #elif defined(__FreeBSD__) || defined(__DragonFly__)
+        int mib[4];
+        mib[0] = CTL_KERN;
+        mib[1] = KERN_PROC;
+        mib[2] = KERN_PROC_PATHNAME;
+        mib[3] = -1;
+        size_t cb = sizeof(exe_path);
+        if (sysctl(mib, 4, exe_path, &cb, NULL, 0) != 0) {
+            perror("sysctl");
+            return 1;
+        }
+    #endif
+
+    char *dir = dirname(exe_path);
     snprintf(path, sizeof(path), "%s/flogo.txt", dir);
 
     int logo_lines = 0;
