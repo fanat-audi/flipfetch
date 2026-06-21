@@ -3,7 +3,7 @@
 set -e
 
 echo "cloning flipfetch repository..."
-git clone https://github.com/fanat-audiflipfetch.git /tmp/flipfetch
+git clone https://github.com/fanat-audi/flipfetch.git /tmp/flipfetch
 
 cd /tmp/flipfetch
 
