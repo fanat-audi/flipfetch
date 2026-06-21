@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/select.h>
+#include <libgen.h>
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_WHITE   "\033[37m"
@@ -141,20 +142,20 @@ void trim_whitespace(char *str) {
 }
 
 void parse_info(const char *response, FlipperInfo *info) {
-    strcpy(info->dolphin, "Footcal");
-    strcpy(info->device, "Flipper Zero");
-    strcpy(info->manufacturer, "Flipper Devices");
-    strcpy(info->cpu, "STM32WB55");
-    strcpy(info->firmware, "mntm-011");
-    strcpy(info->flash, "1 MB");
-    strcpy(info->sram, "256 KB");
-    strcpy(info->sd_card, "29 GB");
-    strcpy(info->serial, "23A3F00027E18000");
-    strcpy(info->status, "Connected");
+    strcpy(info->dolphin, "N/A");
+    strcpy(info->device, "N/A");
+    strcpy(info->manufacturer, "Flipper Devices Ltd.");
+    strcpy(info->cpu, "N/A");
+    strcpy(info->firmware, "N/A");
+    strcpy(info->flash, "N/A");
+    strcpy(info->sram, "N/A");
+    strcpy(info->sd_card, "N/A");
+    strcpy(info->serial, "N/A");
+    strcpy(info->status, "N/A");
     
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
-    strftime(info->build_date, sizeof(info->build_date), "02-07-2025", tm);
+    strcpy(info->build_date, "N/A");
     
     char response_copy[MAX_BUFFER];
     strncpy(response_copy, response, MAX_BUFFER - 1);
@@ -292,8 +293,12 @@ int main(int argc, char *argv[]) {
     int fd = -1;
     FlipperInfo info = {0};
     
+    char path[512];
+    char *dir = dirname(strdup(argv[0]));
+    snprintf(path, sizeof(path), "%s/flogo.txt", dir);
+
     int logo_lines = 0;
-    char** logo = read_logo("flogo.txt", &logo_lines);
+    char** logo = read_logo(path, &logo_lines);
     
     if (!find_flipper_port(port, sizeof(port))) {
         printf("%s❌ Flipper Zero not found. Is it connected?%s\n", COLOR_LABEL, COLOR_RESET);
@@ -304,8 +309,8 @@ int main(int argc, char *argv[]) {
     fd = serial_open(port);
     if (fd < 0) {
         printf("%s❌ Failed to connect to %s. Check permissions.%s\n", COLOR_LABEL, port, COLOR_RESET);
-        printf("%s💡 Linux: sudo usermod -aG dialout $USER && reboot\n", COLOR_WHITE);
-        printf("%s💡 FreeBSD: sudo pw groupmod dialer -m $USER && logout/login%s\n", COLOR_WHITE, COLOR_RESET);
+        printf("%sLinux: sudo usermod -aG dialout $USER && reboot\n", COLOR_WHITE);
+        printf("%sFreeBSD: sudo pw groupmod dialer -m $USER && logout/login%s\n", COLOR_WHITE, COLOR_RESET);
         free_logo(logo, logo_lines);
         return 1;
     }
